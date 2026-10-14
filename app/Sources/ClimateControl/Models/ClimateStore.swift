@@ -1,22 +1,22 @@
 import Foundation
 import Observation
 
-/// Single source of truth for the UI: polls the bridge and sends debounced, optimistic updates.
+/// Single source of truth for the UI: polls MELCloud and sends debounced, optimistic updates.
 @MainActor
 @Observable
 final class ClimateStore {
     private(set) var device: ACDevice?
+    private(set) var devices: [DeviceSummary] = []
     private(set) var errorMessage: String?
     private(set) var isSending = false
-    private(set) var devices: [BridgeClient.DeviceSummary] = []
+    private(set) var needsSignIn = false
+    private(set) var accountEmail: String?
 
-    /// Explicit choice from the popover's device menu; survives restarts.
-    private var selectedDeviceID: Int? {
-        get { UserDefaults.standard.object(forKey: "selectedDeviceID") as? Int }
-        set { UserDefaults.standard.set(newValue, forKey: "selectedDeviceID") }
-    }
+    let preferences: Preferences
+    /// Set by the app shell; opens the Settings window (sign-in lives there).
+    var openSettings: () -> Void = {}
 
-    private let client: BridgeClient
+    private let service: MELCloudService?
     private let pollInterval: Duration
     private let debounce: Duration
     private var pollTask: Task<Void, Never>?
@@ -24,24 +24,36 @@ final class ClimateStore {
     private var debounceTask: Task<Void, Never>?
     private var pendingPatch = StatePatch()
     private var isInteracting = false
-    private let isDemo: Bool
 
-    init(client: BridgeClient, pollInterval: Duration = .seconds(60), debounce: Duration = .milliseconds(600)) {
-        self.client = client
+    init(
+        service: MELCloudService,
+        preferences: Preferences,
+        pollInterval: Duration = .seconds(60),
+        debounce: Duration = .milliseconds(600)
+    ) {
+        self.service = service
+        self.preferences = preferences
         self.pollInterval = pollInterval
         self.debounce = debounce
-        self.isDemo = false
+        self.accountEmail = service.accountEmail
+        self.needsSignIn = !service.isSignedIn
     }
 
-    /// Offline mode for design work: `CLIMATE_DEMO=1 swift run`.
-    init(demo device: ACDevice) {
-        self.client = BridgeClient()
+    /// Offline mode for design work: `CLIMATE_DEMO=1`.
+    init(demo device: ACDevice, preferences: Preferences) {
+        self.service = nil
+        self.preferences = preferences
         self.pollInterval = .seconds(60)
         self.debounce = .zero
-        self.isDemo = true
         self.device = device
-        self.devices = [.init(id: device.id, name: device.name, isDefault: true), .init(id: 1, name: "Wohnzimmer")]
+        self.devices = [
+            DeviceSummary(id: device.id, buildingID: 0, name: device.name),
+            DeviceSummary(id: 1, buildingID: 0, name: "Living room"),
+        ]
+        self.accountEmail = "demo@example.com"
     }
+
+    var isDemo: Bool { service == nil }
 
     func start() {
         guard pollTask == nil, !isDemo else { return }
@@ -54,31 +66,64 @@ final class ClimateStore {
     }
 
     func refresh(force: Bool = false) async {
+        guard let service else { return }
+        guard service.isSignedIn else {
+            needsSignIn = true
+            device = nil
+            return
+        }
         do {
-            if devices.isEmpty { devices = try await client.devices() }
+            if devices.isEmpty || force { devices = try await service.devices() }
             guard let id = activeDeviceID else {
-                errorMessage = "Kein Gerät in MELCloud gefunden."
+                errorMessage = "No air conditioner found in your MELCloud account."
                 return
             }
-            let fresh = try await client.state(deviceID: id, force: force)
+            let fresh = try await service.device(id: id, force: force)
             // Don't overwrite optimistic UI while the user drags or a write is queued/in flight.
             if !hasPendingWork, fresh.id == activeDeviceID { device = fresh }
             errorMessage = nil
+            needsSignIn = false
         } catch {
-            errorMessage = "Bridge nicht erreichbar"
+            handle(error)
         }
     }
 
-    /// Menu choice > MELCLOUD_DEVICE from bridge/.env > first unit.
+    // MARK: Account
+
+    func signIn(email: String, password: String) async throws {
+        guard let service else { return }
+        try await service.signIn(email: email, password: password)
+        accountEmail = email
+        needsSignIn = false
+        errorMessage = nil
+        devices = []
+        await refresh(force: true)
+    }
+
+    func signOut() async {
+        guard let service else { return }
+        await service.signOut()
+        debounceTask?.cancel()
+        debounceTask = nil
+        pendingPatch = StatePatch()
+        device = nil
+        devices = []
+        accountEmail = nil
+        needsSignIn = true
+    }
+
+    // MARK: Devices
+
+    /// Menu/Settings choice > first unit of the account.
     private var activeDeviceID: Int? {
         let ids = devices.map(\.id)
-        if let chosen = selectedDeviceID, ids.contains(chosen) { return chosen }
-        return devices.first(where: \.isDefault)?.id ?? ids.first
+        if let chosen = preferences.selectedDeviceID, ids.contains(chosen) { return chosen }
+        return ids.first
     }
 
     func selectDevice(_ id: Int) {
         guard id != device?.id else { return }
-        selectedDeviceID = id
+        preferences.selectedDeviceID = id
         if isDemo {
             device?.name = devices.first { $0.id == id }?.name ?? ""
             return
@@ -87,7 +132,7 @@ final class ClimateStore {
         debounceTask = nil
         pendingPatch = StatePatch()
         device = nil
-        Task { await refresh(force: true) }
+        Task { await refresh() }
     }
 
     // MARK: Writing
@@ -132,25 +177,38 @@ final class ClimateStore {
 
     /// Sends the accumulated patch. Strictly one request at a time; changes made meanwhile follow afterwards.
     private func flush() async {
-        guard !isSending, !pendingPatch.isEmpty, let deviceID = device?.id else { return }
+        guard let service, !isSending, !pendingPatch.isEmpty, let deviceID = device?.id else { return }
         let patch = pendingPatch
         pendingPatch = StatePatch()
         isSending = true
         var failed = false
         do {
-            let fresh = try await client.patch(deviceID: deviceID, patch)
+            let fresh = try await service.apply(patch, to: deviceID)
             // Only adopt the server's view if nothing newer happened locally in the meantime.
             if pendingPatch.isEmpty, !isInteracting, debounceTask == nil, fresh.id == device?.id { device = fresh }
             errorMessage = nil
         } catch {
-            errorMessage = "Änderung fehlgeschlagen"
+            handle(error, fallback: "Change could not be sent.")
             failed = true
         }
         isSending = false
         if !pendingPatch.isEmpty {
             scheduleFlush()
-        } else if failed {
+        } else if failed, !needsSignIn {
             await refresh(force: true)
+        }
+    }
+
+    private func handle(_ error: Error, fallback: String? = nil) {
+        switch error {
+        case MELCloudService.ServiceError.notSignedIn, MELCloudService.ServiceError.sessionExpired:
+            needsSignIn = true
+            device = nil
+            errorMessage = (error as? LocalizedError)?.errorDescription
+        case let error as LocalizedError:
+            errorMessage = error.errorDescription ?? fallback
+        default:
+            errorMessage = fallback ?? "Something went wrong."
         }
     }
 

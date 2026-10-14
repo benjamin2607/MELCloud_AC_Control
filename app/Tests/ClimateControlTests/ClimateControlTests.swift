@@ -2,26 +2,95 @@ import Foundation
 import Testing
 @testable import ClimateControl
 
+/// Trimmed-down MELCloud payloads (shape as returned by User/ListDevices and Device/Get).
+enum Fixtures {
+    static let conf: JSONObject = [
+        "DeviceID": .number(101),
+        "BuildingID": .number(7),
+        "DeviceName": .string("Bedroom"),
+        "Device": .object([
+            "DeviceType": .number(0),
+            "CanHeat": .bool(true),
+            "CanCool": .bool(true),
+            "CanDry": .bool(true),
+            "ModelSupportsAuto": .bool(true),
+            "HasAutomaticFanSpeed": .bool(true),
+            "ModelSupportsVaneHorizontal": .bool(true),
+            "SwingFunction": .bool(true),
+            "MinTempHeat": .number(10),
+            "MaxTempHeat": .number(31),
+            "MinTempCoolDry": .number(16),
+            "MaxTempCoolDry": .number(31),
+            "TemperatureIncrement": .number(0.5),
+        ]),
+    ]
+
+    static let state: JSONObject = [
+        "DeviceID": .number(101),
+        "DeviceType": .number(0),
+        "Power": .bool(false),
+        "RoomTemperature": .number(24),
+        "SetTemperature": .number(24),
+        "OperationMode": .number(1),
+        "SetFanSpeed": .number(4),
+        "NumberOfFanSpeeds": .number(5),
+        "VaneVertical": .number(4),
+        "VaneHorizontal": .number(3),
+        "HasError": .bool(false),
+        "ErrorCode": .number(8000),
+        "EffectiveFlags": .number(0),
+    ]
+}
+
+@Test func mapsStateAndCapabilities() {
+    let device = AirToAirMapping.device(conf: Fixtures.conf, state: Fixtures.state)
+    #expect(device.id == 101)
+    #expect(device.operationMode == .heat)
+    #expect(device.operationModes == [.heat, .dry, .cool, .fanOnly, .heatCool])
+    #expect(device.targetTemperatureMin == 10) // heat mode limits
+    #expect(device.fanSpeed == "4")
+    #expect(device.fanSpeeds == ["auto", "1", "2", "3", "4", "5"])
+    #expect(device.vaneVertical == "4")
+    #expect(device.vaneVerticalPositions.last == "swing")
+    #expect(device.errorCode == nil) // 8000 means "no error"
+}
+
+@Test func applySetsValuesAndFlags() throws {
+    let patch = StatePatch(power: true, targetTemperature: 21.3, fanSpeed: "auto", vaneVertical: "swing")
+    let next = try AirToAirMapping.apply(patch, to: Fixtures.state, conf: Fixtures.conf)
+    #expect(next["Power"] == .bool(true))
+    #expect(next["SetTemperature"] == .number(21.5))
+    #expect(next["SetFanSpeed"] == .number(0))
+    #expect(next["VaneVertical"] == .number(7))
+    #expect(next["EffectiveFlags"] == .number(Double(0x01 | 0x04 | 0x08 | 0x10)))
+    #expect(next["VaneHorizontal"] == .number(3)) // untouched fields survive
+}
+
+@Test func temperatureIsClampedToModeLimits() throws {
+    // Switching to cool raises the minimum from 10 to 16 °C.
+    let patch = StatePatch(targetTemperature: 12, operationMode: .cool)
+    let next = try AirToAirMapping.apply(patch, to: Fixtures.state, conf: Fixtures.conf)
+    #expect(next["OperationMode"] == .number(3))
+    #expect(next["SetTemperature"] == .number(16))
+}
+
+@Test func rejectsUnsupportedValues() {
+    #expect(throws: AirToAirMapping.MappingError.self) {
+        try AirToAirMapping.apply(StatePatch(fanSpeed: "9"), to: Fixtures.state, conf: Fixtures.conf)
+    }
+}
+
+@Test func jsonRoundTripKeepsIntegersIntegral() throws {
+    let data = try JSONEncoder().encode(JSONValue.object(["EffectiveFlags": .number(7), "T": .number(21.5)]))
+    let text = String(decoding: data, as: UTF8.self)
+    #expect(text.contains("\"EffectiveFlags\":7"))
+    #expect(text.contains("21.5"))
+}
+
 @Test func patchMergeKeepsLatestValues() {
     let merged = StatePatch(power: true, targetTemperature: 20)
         .merged(with: StatePatch(targetTemperature: 22.5))
     #expect(merged == StatePatch(power: true, targetTemperature: 22.5))
-}
-
-@Test func decodesBridgeJSON() throws {
-    let json = """
-    {"id": 1, "name": "Schlafzimmer", "power": true, "room_temperature": 25.0, "outdoor_temperature": null,
-     "target_temperature": 16, "target_temperature_min": 16, "target_temperature_max": 31,
-     "target_temperature_step": 0.5, "operation_mode": "cool", "operation_modes": ["heat", "cool", "fan_only"],
-     "fan_speed": "auto", "fan_speeds": ["auto", "1", "2"], "vane_vertical": "swing",
-     "vane_vertical_positions": ["auto", "swing"], "vane_horizontal": null, "vane_horizontal_positions": [],
-     "wifi_signal": -60, "has_error": false, "error_code": null, "last_seen": null}
-    """
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    let device = try decoder.decode(ACDevice.self, from: Data(json.utf8))
-    #expect(device.operationModes == [.heat, .cool, .fanOnly])
-    #expect(device.warmth == 0)
 }
 
 @Test func colorLerpClamps() {

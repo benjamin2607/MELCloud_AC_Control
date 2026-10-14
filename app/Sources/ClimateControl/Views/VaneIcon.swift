@@ -145,7 +145,7 @@ struct VanePicker: View {
                 if positions.contains(position) { onSelect(position) }
             })
             .accessibilityElement()
-            .accessibilityLabel("Lamellenstufe \(Labels.vane(selected))")
+            .accessibilityLabel("Vane position \(Labels.vane(selected))")
             .accessibilityAdjustableAction { direction in
                 let current = selected.flatMap(VaneGeometry.positions.firstIndex(of:)) ?? 2
                 let next = direction == .increment ? min(current + 1, 4) : max(current - 1, 0)

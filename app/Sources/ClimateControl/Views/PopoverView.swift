@@ -8,7 +8,7 @@ struct PopoverView: View {
             if let device = store.device {
                 DeviceView(device: device)
             } else {
-                PlaceholderView(message: store.errorMessage)
+                PlaceholderView()
             }
         }
         .frame(width: 340)
@@ -65,7 +65,7 @@ private struct DeviceView: View {
     private var roomTemperature: some View {
         HStack(spacing: 8) {
             Label {
-                Text("Raum ").foregroundStyle(.secondary)
+                Text("Room ").foregroundStyle(.secondary)
                     + Text(device.roomTemperature.map { "\($0.formatted(.number.precision(.fractionLength(0...1))))°C" } ?? "–")
                     .fontWeight(.semibold)
             } icon: {
@@ -86,7 +86,7 @@ private struct DeviceView: View {
                 .shadow(color: device.power ? theme.accent.opacity(0.6) : .clear, radius: 12)
         }
         .buttonStyle(.plain)
-        .help(device.power ? "Ausschalten" : "Einschalten")
+        .help(device.power ? "Turn off" : "Turn on")
     }
 
     @ViewBuilder
@@ -105,7 +105,7 @@ private struct DeviceView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help("Gerät wechseln")
+            .help("Switch device")
         } else {
             Text(device.name)
                 .font(.headline)
@@ -128,11 +128,11 @@ private struct DeviceView: View {
     private var controls: some View {
         HStack(spacing: 8) {
             ControlTile(
-                title: "Modus", value: device.operationMode.title, symbol: device.operationMode.symbol, theme: theme,
-                options: device.selectableModes.map { ($0.rawValue, $0.title, $0.symbol) }, selected: device.operationMode.rawValue
+                title: "Mode", value: device.operationMode.title, symbol: device.operationMode.symbol, theme: theme,
+                options: store.preferences.modes(for: device).map { ($0.rawValue, $0.title, $0.symbol) }, selected: device.operationMode.rawValue
             ) { if let mode = OperationMode(rawValue: $0) { store.setMode(mode) } }
 
-            ControlTile(title: "Lüfter", value: Labels.fanSpeed(device.fanSpeed), theme: theme) {
+            ControlTile(title: "Fan", value: Labels.fanSpeed(device.fanSpeed), theme: theme) {
                 FanSpeedIcon(speed: device.fanSpeed, levels: max(device.fanSpeeds.count - 1, 1),
                              active: theme.accent, inactive: theme.accent.opacity(0.28))
             } picker: { dismiss in
@@ -142,8 +142,9 @@ private struct DeviceView: View {
                 }
             }
 
-            // No horizontal-vane tile: it is adjusted by hand on the MSZ-AY, even though MELCloud reports positions.
-            ControlTile(title: "Lamelle", value: Labels.vane(device.vaneVertical), theme: theme) {
+            // Up/down vane only. Many wall units (e.g. MSZ-AY) have a manual left/right vane even though
+            // MELCloud reports positions for it, so no horizontal tile.
+            ControlTile(title: "Vane", value: Labels.vane(device.vaneVertical), theme: theme) {
                 VaneIcon(position: device.vaneVertical, active: theme.accent, inactive: theme.accent.opacity(0.28))
             } picker: { dismiss in
                 VanePicker(positions: device.vaneVerticalPositions, selected: device.vaneVertical, accent: theme.accent) {
@@ -158,21 +159,32 @@ private struct DeviceView: View {
 }
 
 private struct PlaceholderView: View {
-    let message: String?
+    @Environment(ClimateStore.self) private var store
 
     var body: some View {
         VStack(spacing: 12) {
-            if let message {
-                Image(systemName: "bolt.horizontal.circle").font(.largeTitle).foregroundStyle(.secondary)
-                Text(message).font(.headline)
-                Text("Läuft die Bridge? `scripts/run-bridge.sh`").font(.caption).foregroundStyle(.secondary)
+            if store.needsSignIn {
+                Image(systemName: "person.crop.circle.badge.questionmark").font(.largeTitle).foregroundStyle(.secondary)
+                Text("Sign in to MELCloud").font(.headline)
+                if let message = store.errorMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }
+                Button("Open Settings…", action: store.openSettings)
+                    .buttonStyle(.borderedProminent)
+            } else if let message = store.errorMessage {
+                Image(systemName: "wifi.exclamationmark").font(.largeTitle).foregroundStyle(.secondary)
+                Text(message).font(.headline).multilineTextAlignment(.center)
+                Button("Try Again") { Task { await store.refresh(force: true) } }
             } else {
                 ProgressView()
-                Text("Verbinde mit MELCloud …").foregroundStyle(.secondary)
+                Text("Connecting to MELCloud…").foregroundStyle(.secondary)
             }
             Divider()
-            Button("ClimateControl beenden") { NSApplication.shared.terminate(nil) }
-                .buttonStyle(.link)
+            HStack(spacing: 16) {
+                Button("Settings…", action: store.openSettings)
+                Button("Quit") { NSApplication.shared.terminate(nil) }
+            }
+            .buttonStyle(.link)
         }
         .padding(28)
         .frame(maxWidth: .infinity)

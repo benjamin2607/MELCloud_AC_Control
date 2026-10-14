@@ -1,7 +1,7 @@
 import Foundation
 
-/// Device state as delivered by the local bridge (see docs/API.md).
-struct ACDevice: Codable, Equatable, Identifiable {
+/// UI-facing state of one indoor unit, built from MELCloud data by `AirToAirMapping`.
+struct ACDevice: Equatable, Identifiable {
     let id: Int
     var name: String
     var power: Bool
@@ -17,8 +17,6 @@ struct ACDevice: Codable, Equatable, Identifiable {
     var fanSpeeds: [String]
     var vaneVertical: String?
     var vaneVerticalPositions: [String]
-    var vaneHorizontal: String?
-    var vaneHorizontalPositions: [String]
     var hasError: Bool
     var errorCode: String?
 
@@ -29,49 +27,45 @@ struct ACDevice: Codable, Equatable, Identifiable {
         return min(max((targetTemperature - targetTemperatureMin) / span, 0), 1)
     }
 
-    /// Modes offered in the UI, limited to what the unit supports.
-    var selectableModes: [OperationMode] { OperationMode.selectable.filter(operationModes.contains) }
-
     mutating func apply(_ patch: StatePatch) {
         if let v = patch.power { power = v }
         if let v = patch.targetTemperature { targetTemperature = v }
         if let v = patch.operationMode { operationMode = v }
         if let v = patch.fanSpeed { fanSpeed = v }
         if let v = patch.vaneVertical { vaneVertical = v }
-        if let v = patch.vaneHorizontal { vaneHorizontal = v }
     }
+}
+
+/// Entry of the device menu.
+struct DeviceSummary: Identifiable, Equatable, Sendable {
+    let id: Int
+    let buildingID: Int
+    let name: String
 }
 
 extension ACDevice {
     static let demo = ACDevice(
-        id: 0, name: "Schlafzimmer", power: true, roomTemperature: 25, outdoorTemperature: nil,
+        id: 0, name: "Bedroom", power: true, roomTemperature: 25, outdoorTemperature: nil,
         targetTemperature: 21, targetTemperatureMin: 16, targetTemperatureMax: 31, targetTemperatureStep: 0.5,
         operationMode: .heat, operationModes: [.heat, .dry, .cool, .fanOnly, .heatCool],
         fanSpeed: "auto", fanSpeeds: ["auto", "1", "2", "3", "4", "5"],
         vaneVertical: "auto", vaneVerticalPositions: ["auto", "1_up", "2", "3", "4", "5_down", "swing"],
-        vaneHorizontal: nil, vaneHorizontalPositions: [], hasError: false, errorCode: nil
+        hasError: false, errorCode: nil
     )
 }
 
-enum OperationMode: String, Codable, CaseIterable {
+enum OperationMode: String, CaseIterable, Sendable {
     case heat, dry, cool
     case fanOnly = "fan_only"
     case heatCool = "heat_cool"
     case undefined
 
-    /// Only these are offered in the UI (no cooling/drying in this setup).
-    static let selectable: [OperationMode] = [.heat, .fanOnly, .heatCool]
-
-    init(from decoder: Decoder) throws {
-        self = OperationMode(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .undefined
-    }
-
     var title: String {
         switch self {
-        case .heat: "Heizen"
-        case .dry: "Entfeuchten"
-        case .cool: "Kühlen"
-        case .fanOnly: "Lüften"
+        case .heat: "Heat"
+        case .dry: "Dry"
+        case .cool: "Cool"
+        case .fanOnly: "Fan"
         case .heatCool: "Auto"
         case .undefined: "–"
         }
@@ -89,26 +83,24 @@ enum OperationMode: String, Codable, CaseIterable {
     }
 }
 
-/// Partial update sent to the bridge. nil fields are omitted from the JSON.
-struct StatePatch: Codable, Equatable {
+/// Partial update; nil fields stay unchanged.
+struct StatePatch: Equatable, Sendable {
     var power: Bool?
     var targetTemperature: Double?
     var operationMode: OperationMode?
     var fanSpeed: String?
     var vaneVertical: String?
-    var vaneHorizontal: String?
 
     var isEmpty: Bool { self == StatePatch() }
 
-    /// Later values win, so rapid slider moves collapse into one request.
+    /// Later values win, so rapid changes collapse into one request.
     func merged(with other: StatePatch) -> StatePatch {
         StatePatch(
             power: other.power ?? power,
             targetTemperature: other.targetTemperature ?? targetTemperature,
             operationMode: other.operationMode ?? operationMode,
             fanSpeed: other.fanSpeed ?? fanSpeed,
-            vaneVertical: other.vaneVertical ?? vaneVertical,
-            vaneHorizontal: other.vaneHorizontal ?? vaneHorizontal
+            vaneVertical: other.vaneVertical ?? vaneVertical
         )
     }
 }
@@ -118,7 +110,7 @@ enum Labels {
         switch value {
         case nil: "–"
         case "auto": "Auto"
-        case let v?: "Stufe \(v)"
+        case let v?: "Speed \(v)"
         }
     }
 
@@ -127,11 +119,11 @@ enum Labels {
         case nil: "–"
         case "auto": "Auto"
         case "swing": "Swing"
-        case "1_up": "Oben"
-        case "2": "Halb oben"
-        case "3": "Mitte"
-        case "4": "Halb unten"
-        case "5_down": "Unten"
+        case "1_up": "Top"
+        case "2": "Upper"
+        case "3": "Middle"
+        case "4": "Lower"
+        case "5_down": "Bottom"
         case let v?: v
         }
     }

@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# IDE settings
+.idea/
+.vscode/
+
+# Swift / Xcode
+build/
+app/.build/
+app/.swiftpm/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# Secrets - never commit
+.env
+*.token

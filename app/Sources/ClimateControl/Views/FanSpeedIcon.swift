@@ -113,7 +113,7 @@ struct FanSpeedPicker: View {
             if let index = stage(at: tap.location) { onSelect(stages[index]) }
         })
         .accessibilityElement()
-        .accessibilityLabel("Lüfter \(Labels.fanSpeed(selected))")
+        .accessibilityLabel("Fan \(Labels.fanSpeed(selected))")
         .accessibilityAdjustableAction { direction in
             let current = selected.flatMap { stages.firstIndex(of: $0) } ?? 0
             let next = direction == .increment ? min(current + 1, stages.count - 1) : max(current - 1, 0)

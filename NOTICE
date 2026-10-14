@@ -1,0 +1,14 @@
+ClimateControl
+Copyright (c) 2026 benjamin2607. Licensed under the MIT License (see LICENSE).
+
+The MELCloud protocol handling (endpoints, request headers, EffectiveFlags,
+operation mode / fan speed / vane codes and capability rules) in
+app/Sources/ClimateControl/Services/ is a Swift port based on:
+
+  python-melcloud - https://github.com/erwindouna/python-melcloud
+  Copyright (c) 2025 Erwin Douna. MIT License.
+  (a fork of pymelcloud by Vilppu Vuorinen, MIT License)
+
+Mitsubishi Electric and MELCloud are trademarks of Mitsubishi Electric
+Corporation. This project is not affiliated with or endorsed by Mitsubishi
+Electric.

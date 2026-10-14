@@ -10,7 +10,7 @@ final class StatusBarController: NSObject {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let panel = PopoverPanel()
     private var outsideClickMonitor: Any?
-    private var escapeMonitor: Any?
+    private var keyMonitor: Any?
 
     init(store: ClimateStore) {
         self.store = store
@@ -71,10 +71,19 @@ final class StatusBarController: NSObject {
     private func showContextMenu() {
         closePanel()
         let menu = NSMenu()
-        menu.addItem(withTitle: "ClimateControl beenden", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Quit ClimateControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc private func openSettings() {
+        closePanel()
+        store.openSettings()
     }
 
     // MARK: Panel
@@ -89,10 +98,16 @@ final class StatusBarController: NSObject {
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in self?.closePanel() }
         }
-        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53 else { return event } // Esc
-            self?.closePanel()
-            return nil
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Esc
+                self?.closePanel()
+                return nil
+            }
+            if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "," {
+                self?.openSettings()
+                return nil
+            }
+            return event
         }
         Task { await store.refresh() }
     }
@@ -101,9 +116,9 @@ final class StatusBarController: NSObject {
         guard panel.isVisible else { return }
         panel.dismiss()
         statusItem.button?.highlight(false)
-        [outsideClickMonitor, escapeMonitor].compactMap { $0 }.forEach(NSEvent.removeMonitor)
+        [outsideClickMonitor, keyMonitor].compactMap { $0 }.forEach(NSEvent.removeMonitor)
         outsideClickMonitor = nil
-        escapeMonitor = nil
+        keyMonitor = nil
     }
 }
 

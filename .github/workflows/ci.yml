@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+# Least privilege: read-only by default, write access only for the release job.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # build number = commit count
+          persist-credentials: false
+
+      - name: Test
+        run: swift test --package-path app
+
+      - name: Build universal app
+        run: scripts/build-app.sh --universal
+
+      - name: Package
+        run: |
+          cd build
+          ditto -c -k --keepParent ClimateControl.app ClimateControl.zip
+          shasum -a 256 ClimateControl.zip > ClimateControl.zip.sha256
+          cat ClimateControl.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClimateControl
+          path: build/ClimateControl.zip*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClimateControl
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME"
+          ClimateControl.zip ClimateControl.zip.sha256
+          --repo "$GITHUB_REPOSITORY" --title "ClimateControl $GITHUB_REF_NAME" --generate-notes
