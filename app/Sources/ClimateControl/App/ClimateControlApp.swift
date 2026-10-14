@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: StatusBarController?
     private var settingsWindow: NSWindow?
     private var store: ClimateStore?
+    private var updates: UpdateChecker?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar-only app: no Dock icon, no main window.
@@ -28,18 +29,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.openSettings = { [weak self] in self?.showSettings() }
         self.store = store
 
-        controller = StatusBarController(store: store)
+        let updates = UpdateChecker(preferences: preferences)
+        self.updates = updates
+
+        controller = StatusBarController(store: store, updates: updates)
         preferences.enableLaunchAtLoginOnFirstRun()
         store.start()
+        if !store.isDemo { updates.start() }
 
         // First run: nothing to show without an account, so go straight to sign-in.
         if store.needsSignIn { showSettings() }
     }
 
     func showSettings() {
-        guard let store else { return }
+        guard let store, let updates else { return }
         if settingsWindow == nil {
-            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView().environment(store)))
+            let root = SettingsView().environment(store).environment(updates)
+            let window = NSWindow(contentViewController: NSHostingController(rootView: root))
             window.title = "ClimateControl Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false

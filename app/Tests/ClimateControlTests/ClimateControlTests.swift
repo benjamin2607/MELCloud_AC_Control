@@ -16,6 +16,7 @@ enum Fixtures {
             "ModelSupportsAuto": .bool(true),
             "HasAutomaticFanSpeed": .bool(true),
             "ModelSupportsVaneHorizontal": .bool(true),
+            "ModelSupportsVaneVertical": .bool(true),
             "SwingFunction": .bool(true),
             "MinTempHeat": .number(10),
             "MaxTempHeat": .number(31),
@@ -53,6 +54,27 @@ enum Fixtures {
     #expect(device.vaneVertical == "4")
     #expect(device.vaneVerticalPositions.last == "swing")
     #expect(device.errorCode == nil) // 8000 means "no error"
+    #expect(device.vaneHorizontal == "3")
+    #expect(device.vaneHorizontalPositions == ["auto", "1_left", "2", "3", "4", "5_right", "split", "swing"])
+}
+
+@Test func applyHorizontalVane() throws {
+    let next = try AirToAirMapping.apply(StatePatch(vaneHorizontal: "split"), to: Fixtures.state, conf: Fixtures.conf)
+    #expect(next["VaneHorizontal"] == .number(8))
+    #expect(next["EffectiveFlags"] == .number(Double(0x100)))
+}
+
+@Test func fahrenheitDisplay() {
+    #expect(TemperatureUnit.fahrenheit.format(21) == "70")   // 69.8 °F
+    #expect(TemperatureUnit.fahrenheit.format(16) == "61")   // 60.8 °F
+    #expect(TemperatureUnit.celsius.symbol == "°C")
+}
+
+@Test func versionComparison() {
+    #expect(UpdateChecker.isVersion("1.10.0", newerThan: "1.9.2"))
+    #expect(UpdateChecker.isVersion("1.0.1", newerThan: "1.0"))
+    #expect(!UpdateChecker.isVersion("1.0.0", newerThan: "1.0.0"))
+    #expect(!UpdateChecker.isVersion("0.9", newerThan: "1.0.0"))
 }
 
 @Test func applySetsValuesAndFlags() throws {

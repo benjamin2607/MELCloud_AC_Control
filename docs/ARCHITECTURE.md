@@ -28,15 +28,19 @@
 | `Services/AirToAirMapping.swift` | MELCloud codes ⇄ app model, capability detection, input validation |
 | `Services/MELCloudAPI.swift` | HTTP requests for `Login/ClientLogin`, `User/ListDevices`, `Device/Get`, `Device/SetAta` |
 | `Services/CredentialStore.swift` | Session token in the Keychain, email in UserDefaults |
+| `Services/UpdateChecker.swift` | Daily GitHub release check, notification, link to the release page |
 
 ## MELCloud specifics
 
 - **Writes post the whole state.** `Device/SetAta` expects the full object from `Device/Get` with
   `EffectiveFlags` marking the changed fields (power `0x01`, mode `0x02`, temperature `0x04`, fan `0x08`,
-  vertical vane `0x10`). `JSONValue` keeps unknown fields intact through the round trip.
+  vertical vane `0x10`, horizontal vane `0x100`). `JSONValue` keeps unknown fields intact through the round trip.
 - **Capabilities** come from the device configuration (`CanHeat`, `CanCool`, `NumberOfFanSpeeds`,
   `MinTempHeat` …). The UI only offers what the unit reports. Temperature limits depend on the mode.
-- **Vane flags are swapped** in the API: `ModelSupportsVaneHorizontal` describes the up/down vane.
+- **Vane flags are swapped** in the API: `ModelSupportsVaneHorizontal` describes the up/down vane,
+  `ModelSupportsVaneVertical` the left/right vane.
+- **Temperatures are always Celsius** in the API. Fahrenheit is a display conversion
+  (`TemperatureUnit`); setpoints stay on MELCloud's 0.5 °C grid.
 - **Error code 8000** means "no error" and is ignored.
 - **Rate limits.** Polling faster than about once a minute can get an account throttled. Hence the caches
   and the debounced writes.

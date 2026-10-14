@@ -94,6 +94,13 @@ private struct DeviceSection: View {
             }
             if let device = store.device {
                 ModeVisibility(device: device)
+                if !device.vaneHorizontalPositions.isEmpty {
+                    Toggle("Show horizontal vane", isOn: Binding(
+                        get: { store.preferences.showHorizontalVane },
+                        set: { store.preferences.showHorizontalVane = $0 }
+                    ))
+                    .help("Turn off if the left/right vane of your unit is adjusted by hand.")
+                }
             }
         }
     }
@@ -130,6 +137,13 @@ private struct GeneralSection: View {
     var body: some View {
         let preferences = store.preferences
         Section("General") {
+            Picker("Temperature unit", selection: Binding(
+                get: { preferences.temperatureUnit },
+                set: { preferences.temperatureUnit = $0 }
+            )) {
+                Text("Celsius (°C)").tag(TemperatureUnit.celsius)
+                Text("Fahrenheit (°F)").tag(TemperatureUnit.fahrenheit)
+            }
             Toggle("Launch at login", isOn: Binding(
                 get: { preferences.launchAtLogin },
                 set: { preferences.setLaunchAtLogin($0) }
@@ -148,14 +162,35 @@ private struct GeneralSection: View {
 }
 
 private struct AboutSection: View {
-    private var version: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-    }
+    @Environment(ClimateStore.self) private var store
+    @Environment(UpdateChecker.self) private var updates
 
     var body: some View {
         Section("About") {
-            LabeledContent("Version", value: version)
+            LabeledContent("Version", value: updates.currentVersion)
+            Toggle("Check for updates daily", isOn: Binding(
+                get: { store.preferences.checkForUpdates },
+                set: { store.preferences.checkForUpdates = $0 }
+            ))
+            HStack {
+                if let update = updates.available {
+                    Label("Version \(update.version) is available", systemImage: "arrow.down.circle.fill")
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Download…", action: updates.openReleasePage)
+                } else {
+                    Text(updates.lastChecked.map { "Up to date · checked \($0.formatted(.relative(presentation: .named)))" }
+                         ?? "Not checked yet")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if updates.isChecking { ProgressView().controlSize(.small) }
+                    Button("Check Now") { Task { await updates.check() } }
+                        .disabled(updates.isChecking)
+                }
+            }
             Link("Source code on GitHub", destination: URL(string: "https://github.com/benjamin2607/melcloud_macos_popover")!)
+            Text("Update checks contact api.github.com once a day. Nothing is downloaded or installed automatically.")
+                .font(.caption).foregroundStyle(.secondary)
             Text("Not affiliated with or endorsed by Mitsubishi Electric. MELCloud is a trademark of Mitsubishi Electric Corporation.")
                 .font(.caption).foregroundStyle(.secondary)
         }

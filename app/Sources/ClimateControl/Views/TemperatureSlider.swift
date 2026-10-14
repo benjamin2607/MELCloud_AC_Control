@@ -4,6 +4,7 @@ import SwiftUI
 struct TemperatureSlider: View {
     let device: ACDevice
     let theme: Theme
+    let unit: TemperatureUnit
     let onChange: (Double) -> Void
     var onEditingChanged: (Bool) -> Void = { _ in }
 
@@ -20,9 +21,9 @@ struct TemperatureSlider: View {
                 stepButton("plus", delta: step)
             }
             HStack {
-                Text("\(Int(range.lowerBound))°")
+                Text(unit.format(range.lowerBound) + "°")
                 Spacer()
-                Text("\(Int(range.upperBound))°")
+                Text(unit.format(range.upperBound) + "°")
             }
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)

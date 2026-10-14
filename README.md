@@ -7,7 +7,10 @@ no official app needed.
 - Native SwiftUI, a single small app with no dependencies, Python or background server
 - The colour theme follows the setpoint, from blue (cool) to amber (warm); airflow animation follows the fan speed
 - Multiple indoor units: switch from the popover
+- Vertical and horizontal vane control (the horizontal tile can be hidden for units with a manual left/right vane)
+- Celsius or Fahrenheit
 - Starts with your Mac (optional)
+- Tells you when a new version is released (no automatic downloads)
 - The password is never stored; only the MELCloud session token is kept in your Keychain
 
 > **Unofficial.** Not affiliated with or endorsed by Mitsubishi Electric. MELCloud is a trademark of
@@ -47,7 +50,8 @@ SHA-256 checksum first.
 
 1. Settings open automatically. Sign in with your MELCloud email and password.
 2. Pick the unit to show if you have several.
-3. Optional: hide modes you never use (e.g. *Cool* in a heating-only setup) under **Shown modes**.
+3. Optional: hide modes you never use (e.g. *Cool* in a heating-only setup) under **Shown modes**, switch
+   the temperature unit, or hide the horizontal vane if yours is adjusted by hand.
 
 Afterwards:
 
@@ -57,6 +61,9 @@ Afterwards:
 | Settings, Quit | Right-click the menu bar icon, or <kbd>⌘</kbd><kbd>,</kbd> while the popover is open |
 | Close the popover | Click elsewhere or press <kbd>Esc</kbd> |
 | Launch at login | Settings › General (enabled by default for the installed app) |
+| Updates | Shown in the popover and as a notification; opens the release page. Settings › About |
+
+Settings are kept when you update the app.
 
 ## How it works
 

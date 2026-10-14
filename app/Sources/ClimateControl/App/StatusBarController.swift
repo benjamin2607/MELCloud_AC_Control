@@ -7,18 +7,21 @@ import SwiftUI
 @MainActor
 final class StatusBarController: NSObject {
     private let store: ClimateStore
+    private let updates: UpdateChecker
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let panel = PopoverPanel()
     private var outsideClickMonitor: Any?
     private var keyMonitor: Any?
 
-    init(store: ClimateStore) {
+    init(store: ClimateStore, updates: UpdateChecker) {
         self.store = store
+        self.updates = updates
         super.init()
 
         panel.setContent(
             PopoverView()
                 .environment(store)
+                .environment(updates)
                 .onGeometryChange(for: CGSize.self, of: \.size) { [weak panel] size in panel?.fit(to: size) }
         )
 
@@ -52,7 +55,8 @@ final class StatusBarController: NSObject {
         image?.isTemplate = true
         button.image = image
         if let device = store.device, device.power {
-            button.title = " \(Int(device.targetTemperature.rounded()))°"
+            let unit = store.preferences.temperatureUnit
+            button.title = " \(Int(unit.value(device.targetTemperature).rounded()))°"
         } else {
             button.title = ""
         }
@@ -73,12 +77,21 @@ final class StatusBarController: NSObject {
         let menu = NSMenu()
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
+        if let update = updates.available {
+            let item = NSMenuItem(title: "Update to \(update.version)…", action: #selector(openUpdate), keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
         menu.addItem(settings)
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit ClimateControl", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc private func openUpdate() {
+        updates.openReleasePage()
     }
 
     @objc private func openSettings() {

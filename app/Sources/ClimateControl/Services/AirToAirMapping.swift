@@ -13,9 +13,13 @@ enum AirToAirMapping {
     private static let flagTemperature = 0x04
     private static let flagFanSpeed = 0x08
     private static let flagVaneVertical = 0x10
+    private static let flagVaneHorizontal = 0x100
 
     private static let modeCodes: [Int: OperationMode] = [1: .heat, 2: .dry, 3: .cool, 7: .fanOnly, 8: .heatCool]
     private static let vaneCodes: [Int: String] = [0: "auto", 1: "1_up", 2: "2", 3: "3", 4: "4", 5: "5_down", 7: "swing"]
+    private static let horizontalVaneCodes: [Int: String] = [
+        0: "auto", 1: "1_left", 2: "2", 3: "3", 4: "4", 5: "5_right", 8: "split", 12: "swing",
+    ]
 
     static func isAirToAir(_ conf: JSONObject) -> Bool {
         conf["Device"]?.object?["DeviceType"]?.int == 0
@@ -49,6 +53,8 @@ enum AirToAirMapping {
             fanSpeeds: fanSpeeds(caps: caps, state: state),
             vaneVertical: state["VaneVertical"]?.int.flatMap { vaneCodes[$0] },
             vaneVerticalPositions: vanePositions(conf: conf, caps: caps),
+            vaneHorizontal: state["VaneHorizontal"]?.int.flatMap { horizontalVaneCodes[$0] },
+            vaneHorizontalPositions: horizontalVanePositions(conf: conf, caps: caps),
             hasError: hasError,
             // MELCloud reports 8000 ("no error") on healthy units; only surface real errors.
             errorCode: hasError ? state["ErrorCode"]?.int.map(String.init) : nil
@@ -94,6 +100,15 @@ enum AirToAirMapping {
             flags |= flagVaneVertical
         }
 
+        if let position = patch.vaneHorizontal {
+            guard current.vaneHorizontalPositions.contains(position),
+                  let code = horizontalVaneCodes.first(where: { $0.value == position })?.key else {
+                throw MappingError.unsupported("horizontal vane position \(position)")
+            }
+            next["VaneHorizontal"] = .number(Double(code))
+            flags |= flagVaneHorizontal
+        }
+
         next["EffectiveFlags"] = .number(Double(flags))
         next["HasPendingCommand"] = .bool(flags != 0)
         return next
@@ -131,6 +146,14 @@ enum AirToAirMapping {
         // MELCloud swaps the vertical/horizontal capability flags; "Horizontal" means the up/down vane.
         guard conf["HideVaneControls"]?.bool != true, caps["ModelSupportsVaneHorizontal"]?.bool == true else { return [] }
         var positions = ["auto", "1_up", "2", "3", "4", "5_down"]
+        if caps["SwingFunction"]?.bool == true { positions.append("swing") }
+        return positions
+    }
+
+    private static func horizontalVanePositions(conf: JSONObject, caps: JSONObject) -> [String] {
+        // Swapped flags again: "Vertical" means the left/right vane.
+        guard conf["HideVaneControls"]?.bool != true, caps["ModelSupportsVaneVertical"]?.bool == true else { return [] }
+        var positions = ["auto", "1_left", "2", "3", "4", "5_right", "split"]
         if caps["SwingFunction"]?.bool == true { positions.append("swing") }
         return positions
     }

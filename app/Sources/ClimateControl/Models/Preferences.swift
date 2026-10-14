@@ -18,12 +18,33 @@ final class Preferences {
         didSet { defaults.set(selectedDeviceID, forKey: "selectedDeviceID") }
     }
 
+    /// Display unit. Defaults to the Mac's region (°F for the US measurement system).
+    var temperatureUnit: TemperatureUnit {
+        didSet { defaults.set(temperatureUnit.rawValue, forKey: "temperatureUnit") }
+    }
+
+    /// Left/right vane tile (only shown if the unit reports it). Can be hidden for units whose
+    /// left/right vane is moved by hand.
+    var showHorizontalVane: Bool {
+        didSet { defaults.set(showHorizontalVane, forKey: "showHorizontalVane") }
+    }
+
+    /// Daily check of the GitHub releases for a newer version.
+    var checkForUpdates: Bool {
+        didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates") }
+    }
+
     private(set) var launchAtLogin: Bool = false
     private(set) var launchAtLoginNeedsApproval = false
 
     init() {
         hiddenModes = Set((defaults.stringArray(forKey: "hiddenModes") ?? []).compactMap(OperationMode.init(rawValue:)))
         selectedDeviceID = defaults.object(forKey: "selectedDeviceID") as? Int
+        temperatureUnit = defaults.string(forKey: "temperatureUnit").flatMap(TemperatureUnit.init(rawValue:))
+            ?? (Locale.current.measurementSystem == .us ? .fahrenheit : .celsius)
+        // Defaults only apply to keys never set before, so choices survive app updates.
+        showHorizontalVane = defaults.object(forKey: "showHorizontalVane") as? Bool ?? true
+        checkForUpdates = defaults.object(forKey: "checkForUpdates") as? Bool ?? true
         refreshLoginItemStatus()
     }
 

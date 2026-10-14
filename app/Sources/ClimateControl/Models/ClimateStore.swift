@@ -219,4 +219,5 @@ final class ClimateStore {
     func setMode(_ mode: OperationMode) { update(StatePatch(operationMode: mode)) }
     func setFanSpeed(_ speed: String) { update(StatePatch(fanSpeed: speed)) }
     func setVaneVertical(_ position: String) { update(StatePatch(vaneVertical: position)) }
+    func setVaneHorizontal(_ position: String) { update(StatePatch(vaneHorizontal: position)) }
 }

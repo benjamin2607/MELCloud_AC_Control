@@ -9,9 +9,12 @@
 | Email address | UserDefaults (`~/Library/Preferences/io.github.benjamin2607.climatecontrol.plist`), shown in Settings. |
 | Device state | Memory only. |
 
-- Network traffic goes **only** to `https://app.melcloud.com`. App Transport Security enforces TLS.
+- Network traffic goes to `https://app.melcloud.com` and, once a day for the update check, to
+  `https://api.github.com` (can be turned off in Settings › About). App Transport Security enforces TLS.
   The URL session is ephemeral, with no cookie store and no disk cache.
 - The app opens **no listening ports** and has **no third-party dependencies**.
+- The update check only shows a notice and links to the GitHub release page. It never downloads or
+  runs code. Only `github.com` links are opened.
 - Values sent to MELCloud are validated against the unit's reported capabilities
   (`AirToAirMapping.apply`).
 - Polling is rate-limited to protect your account from being throttled.

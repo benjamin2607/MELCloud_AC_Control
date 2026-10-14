@@ -4,6 +4,7 @@ import SwiftUI
 struct ACUnitView: View {
     let device: ACDevice
     let theme: Theme
+    let temperatureUnit: TemperatureUnit
 
     /// Points per second the air dashes travel. Stage 1 is a gentle drift, stage 5 a clear rush.
     private var flowSpeed: Double {
@@ -31,7 +32,7 @@ struct ACUnitView: View {
             .frame(width: 190, height: 52)
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 4) {
-                    Text("\(Int(device.targetTemperature.rounded()))")
+                    Text("\(Int(temperatureUnit.value(device.targetTemperature).rounded()))")
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                     Circle().frame(width: 4, height: 4)
                 }

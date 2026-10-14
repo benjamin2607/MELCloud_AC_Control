@@ -25,16 +25,23 @@ private struct DeviceView: View {
     @Environment(ClimateStore.self) private var store
     let device: ACDevice
 
+    @Environment(UpdateChecker.self) private var updates
+
     private var theme: Theme { Theme(warmth: device.warmth, isOn: device.power) }
+    private var unit: TemperatureUnit { store.preferences.temperatureUnit }
+    private var showsHorizontalVane: Bool {
+        store.preferences.showHorizontalVane && !device.vaneHorizontalPositions.isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
+            if let update = updates.available { updateBanner(update) }
             header
-            ACUnitView(device: device, theme: theme)
+            ACUnitView(device: device, theme: theme, temperatureUnit: unit)
                 .frame(height: 150)
             temperatureReadout
             TemperatureSlider(
-                device: device, theme: theme,
+                device: device, theme: theme, unit: unit,
                 onChange: { store.setTemperature($0) },
                 onEditingChanged: { store.setInteracting($0) }
             )
@@ -66,7 +73,7 @@ private struct DeviceView: View {
         HStack(spacing: 8) {
             Label {
                 Text("Room ").foregroundStyle(.secondary)
-                    + Text(device.roomTemperature.map { "\($0.formatted(.number.precision(.fractionLength(0...1))))°C" } ?? "–")
+                    + Text(device.roomTemperature.map { unit.format($0) + unit.symbol } ?? "–")
                     .fontWeight(.semibold)
             } icon: {
                 Image(systemName: "thermometer.medium").foregroundStyle(theme.accent)
@@ -114,47 +121,92 @@ private struct DeviceView: View {
 
     private var temperatureReadout: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(device.targetTemperature.formatted(.number.precision(.fractionLength(0...1))))
+            Text(unit.format(device.targetTemperature))
                 .font(.system(size: 64, weight: .light, design: .rounded))
                 .monospacedDigit()
-                .contentTransition(.numericText(value: device.targetTemperature))
-            Text("°C").font(.title3.weight(.semibold)).foregroundStyle(theme.accent)
+                .contentTransition(.numericText(value: unit.value(device.targetTemperature)))
+            Text(unit.symbol).font(.title3.weight(.semibold)).foregroundStyle(theme.accent)
         }
         .lineLimit(1)
         .fixedSize()
         .opacity(device.power ? 1 : 0.4)
     }
 
+    /// One row of three tiles, or a 2×2 grid when the horizontal vane tile is shown.
+    @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 8) {
-            ControlTile(
-                title: "Mode", value: device.operationMode.title, symbol: device.operationMode.symbol, theme: theme,
-                options: store.preferences.modes(for: device).map { ($0.rawValue, $0.title, $0.symbol) }, selected: device.operationMode.rawValue
-            ) { if let mode = OperationMode(rawValue: $0) { store.setMode(mode) } }
-
-            ControlTile(title: "Fan", value: Labels.fanSpeed(device.fanSpeed), theme: theme) {
-                FanSpeedIcon(speed: device.fanSpeed, levels: max(device.fanSpeeds.count - 1, 1),
-                             active: theme.accent, inactive: theme.accent.opacity(0.28))
-            } picker: { dismiss in
-                FanSpeedPicker(speeds: device.fanSpeeds, selected: device.fanSpeed, accent: theme.accent) {
-                    store.setFanSpeed($0)
-                    dismiss()
+        Group {
+            if showsHorizontalVane {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) { modeTile; fanTile }
+                    HStack(spacing: 8) { verticalVaneTile(title: "Vertical vane"); horizontalVaneTile }
                 }
-            }
-
-            // Up/down vane only. Many wall units (e.g. MSZ-AY) have a manual left/right vane even though
-            // MELCloud reports positions for it, so no horizontal tile.
-            ControlTile(title: "Vane", value: Labels.vane(device.vaneVertical), theme: theme) {
-                VaneIcon(position: device.vaneVertical, active: theme.accent, inactive: theme.accent.opacity(0.28))
-            } picker: { dismiss in
-                VanePicker(positions: device.vaneVerticalPositions, selected: device.vaneVertical, accent: theme.accent) {
-                    store.setVaneVertical($0)
-                    dismiss()
-                }
+            } else {
+                HStack(spacing: 8) { modeTile; fanTile; verticalVaneTile(title: "Vane") }
             }
         }
         .disabled(!device.power)
         .opacity(device.power ? 1 : 0.5)
+    }
+
+    private var modeTile: some View {
+        ControlTile(
+            title: "Mode", value: device.operationMode.title, symbol: device.operationMode.symbol, theme: theme,
+            options: store.preferences.modes(for: device).map { ($0.rawValue, $0.title, $0.symbol) },
+            selected: device.operationMode.rawValue
+        ) { if let mode = OperationMode(rawValue: $0) { store.setMode(mode) } }
+    }
+
+    private var fanTile: some View {
+        ControlTile(title: "Fan", value: Labels.fanSpeed(device.fanSpeed), theme: theme) {
+            FanSpeedIcon(speed: device.fanSpeed, levels: max(device.fanSpeeds.count - 1, 1),
+                         active: theme.accent, inactive: theme.accent.opacity(0.28))
+        } picker: { dismiss in
+            FanSpeedPicker(speeds: device.fanSpeeds, selected: device.fanSpeed, accent: theme.accent) {
+                store.setFanSpeed($0)
+                dismiss()
+            }
+        }
+    }
+
+    private func verticalVaneTile(title: String) -> some View {
+        ControlTile(title: title, value: Labels.vane(device.vaneVertical), theme: theme) {
+            VaneIcon(position: device.vaneVertical, active: theme.accent, inactive: theme.accent.opacity(0.28))
+        } picker: { dismiss in
+            VanePicker(positions: device.vaneVerticalPositions, selected: device.vaneVertical, accent: theme.accent) {
+                store.setVaneVertical($0)
+                dismiss()
+            }
+        }
+    }
+
+    private var horizontalVaneTile: some View {
+        ControlTile(title: "Horizontal vane", value: Labels.horizontalVane(device.vaneHorizontal), theme: theme) {
+            HorizontalVaneIcon(position: device.vaneHorizontal, active: theme.accent, inactive: theme.accent.opacity(0.28))
+        } picker: { dismiss in
+            HorizontalVanePicker(
+                positions: device.vaneHorizontalPositions, selected: device.vaneHorizontal, accent: theme.accent
+            ) {
+                store.setVaneHorizontal($0)
+                dismiss()
+            }
+        }
+    }
+
+    private func updateBanner(_ update: UpdateChecker.Update) -> some View {
+        Button(action: updates.openReleasePage) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill").foregroundStyle(theme.accent)
+                Text("Version \(update.version) is available").font(.callout.weight(.medium))
+                Spacer()
+                Text("Download").font(.callout).foregroundStyle(theme.accent)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.white.opacity(0.08)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Opens the release page on GitHub")
     }
 }
 
